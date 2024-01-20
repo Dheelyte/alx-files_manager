@@ -133,30 +133,17 @@ export default class FilesController {
     });
   }
 
-  static async getShow(req, res) {
-    const { user } = req;
-    const id = req.params ? req.params.id : NULL_ID;
-    const userId = user._id.toString();
-    const file = await (await dbClient.filesCollection())
-      .findOne({
-        _id: new mongoDBCore.BSON.ObjectId(isValidId(id) ? id : NULL_ID),
-        userId: new mongoDBCore.BSON.ObjectId(isValidId(userId) ? userId : NULL_ID),
-      });
-
+  static async getShow(request, response) {
+    const usrId = request.user._id;
+    const { id } = request.params;
+    const file = await dbClient.filterFiles({ _id: id });
     if (!file) {
-      res.status(404).json({ error: 'Not found' });
-      return;
+      response.status(404).json({ error: 'Not found' }).end();
+    } else if (String(file.userId) !== String(usrId)) {
+      response.status(404).json({ error: 'Not found' }).end();
+    } else {
+      response.status(200).json(file).end();
     }
-    res.status(200).json({
-      id,
-      userId,
-      name: file.name,
-      type: file.type,
-      isPublic: file.isPublic,
-      parentId: file.parentId === ROOT_FOLDER_ID.toString()
-        ? 0
-        : file.parentId.toString(),
-    });
   }
 
   /**
