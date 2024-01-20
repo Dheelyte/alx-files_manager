@@ -146,8 +146,6 @@ export default class FilesController {
     if (!file) {
       res.status(404).json({ error: 'Not found' });
       return;
-    } else if (String(file.userId) !== String(usrId)) {
-      response.status(404).json({ error: 'Not found' }).end();
     }
     res.status(200).json({
       id,
@@ -166,23 +164,40 @@ export default class FilesController {
    * @param {Request} req The Express request object.
    * @param {Response} res The Express response object.
    */
-  static async getIndex(request, response) {
-    const usrId = request.user._id;
-    const _parentId = request.query.parentId ? request.query.parentId : '0';
-    const page = request.query.page ? request.query.page : 0;
-    const cursor = await dbClient.findFiles(
-      { parentId: _parentId, userId: usrId },
-      { limit: 20, skip: 20 * page },
-    );
-    const res = await cursor.toArray();
-    res.map((i) => {
-      // eslint-disable-next-line no-param-reassign
-      i.id = i._id;
-      // eslint-disable-next-line no-param-reassign
-      delete i._id;
-      return i;
-    });
-    response.status(200).json(res).end();
+  static async getIndex(req, res) {
+    const { user } = req;
+    const parentId = req.query.parentId || ROOT_FOLDER_ID.toString();
+    const page = /\d+/.test((req.query.page || '').toString())
+      ? Number.parseInt(req.query.page, 10)
+      : 0;
+    const filesFilter = {
+      userId: user._id,
+      parentId: parentId === ROOT_FOLDER_ID.toString()
+        ? parentId
+        : new mongoDBCore.BSON.ObjectId(isValidId(parentId) ? parentId : NULL_ID),
+    };
+
+    const files = await (await (await dbClient.filesCollection())
+      .aggregate([
+        { $match: filesFilter },
+        { $sort: { _id: -1 } },
+        { $skip: page * MAX_FILES_PER_PAGE },
+        { $limit: MAX_FILES_PER_PAGE },
+        {
+          $project: {
+            _id: 0,
+            id: '$_id',
+            userId: '$userId',
+            name: '$name',
+            type: '$type',
+            isPublic: '$isPublic',
+            parentId: {
+              $cond: { if: { $eq: ['$parentId', '0'] }, then: 0, else: '$parentId' },
+            },
+          },
+        },
+      ])).toArray();
+    res.status(200).json(files);
   }
 
   static async putPublish(req, res) {
